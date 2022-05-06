@@ -19,7 +19,7 @@ AC_SUBST(X_CFLAGS)
 
 PKG_PROG_PKG_CONFIG
 
-PKG_CHECK_MODULES(PRESENCE_UI, [hildon-1 libiphb liblocation telepathy-glib libcanberra profile mce libhildondesktop-1])
+PKG_CHECK_MODULES(PRESENCE_UI, [hildon-1 libiphb liblocation telepathy-glib libcanberra profile mce libhildondesktop-1 rtcom-accounts-ui-client])
 
 #+++++++++++++++
 # Misc programs 

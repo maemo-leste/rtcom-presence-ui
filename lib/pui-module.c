@@ -228,12 +228,11 @@ set_status_message(PuiMaster *master, PuiProfile *profile, PuiMenuItem *item)
 {
   PuiMenuItemPrivate *priv = PRIVATE(item);
   const gchar *status_message = NULL;
-  TpConnectionPresenceType max_presence;
-  gboolean is_not_sip;
+  gboolean no_sip_in_profile;
 
-  pui_master_scan_profile(master, profile, &is_not_sip, &max_presence);
+  pui_master_scan_profile(master, profile, &no_sip_in_profile, NULL);
 
-  if (is_not_sip)
+  if (no_sip_in_profile)
     pui_master_get_global_presence(master, NULL, &status_message, NULL);
 
   gtk_label_set_text(GTK_LABEL(priv->status_label), status_message);

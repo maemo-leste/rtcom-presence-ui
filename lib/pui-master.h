@@ -92,6 +92,9 @@ pui_master_get_presence_type(PuiMaster *master, TpAccount *account,
 const gchar *
 pui_master_get_presence_message(PuiMaster *master);
 
+const gchar *
+pui_master_get_default_presence_message(PuiMaster *master);
+
 PuiProfile *
 pui_master_get_active_profile(PuiMaster *master);
 
@@ -152,7 +155,7 @@ pui_master_set_presence(PuiMaster *master);
 
 void
 pui_master_scan_profile(PuiMaster *master, PuiProfile *profile,
-                        gboolean *has_no_sip_account,
+                        gboolean *no_sip_in_profile,
                         TpConnectionPresenceType *aggregate_presence);
 
 gboolean

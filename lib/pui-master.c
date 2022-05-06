@@ -1653,7 +1653,7 @@ pui_master_get_account_display_name(PuiMaster *master, TpAccount *account)
 
 void
 pui_master_scan_profile(PuiMaster *master, PuiProfile *profile,
-                        gboolean *has_no_sip_account,
+                        gboolean *no_sip_in_profile,
                         TpConnectionPresenceType *aggregate_presence)
 {
   TpConnectionPresenceType presence = TP_CONNECTION_PRESENCE_TYPE_OFFLINE;
@@ -1664,8 +1664,8 @@ pui_master_scan_profile(PuiMaster *master, PuiProfile *profile,
 
   priv = PRIVATE(master);
 
-  if (has_no_sip_account)
-    *has_no_sip_account = FALSE;
+  if (no_sip_in_profile)
+    *no_sip_in_profile = FALSE;
 
   if (gtk_tree_model_get_iter_first(GTK_TREE_MODEL(priv->list_store), &it))
   {
@@ -1688,7 +1688,7 @@ pui_master_scan_profile(PuiMaster *master, PuiProfile *profile,
         if (presence_type != TP_CONNECTION_PRESENCE_TYPE_OFFLINE)
         {
           if (tp_account_is_not_sip(account))
-            *has_no_sip_account = TRUE;
+            *no_sip_in_profile = TRUE;
 
           if (!account_can_change_presence(master, account))
             cannot_change_presence++;
