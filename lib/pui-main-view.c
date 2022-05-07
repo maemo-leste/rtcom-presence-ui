@@ -753,6 +753,33 @@ pui_main_view_activate_profile(PuiMainView *view, PuiProfile *profile)
 }
 
 static void
+on_new_status_button_clicked(GtkWidget *button, PuiMainView *view)
+{
+  /* FIXME */
+  /* pui_profile_editor_run_new(PRIVATE(view)->master); */
+}
+
+static void
+on_edit_status_button_clicked(GtkWidget *button, PuiMainView *view)
+{
+  /* FIXME */
+  /*
+  PuiMainViewPrivate *priv = PRIVATE(view);
+
+  if (!priv->active_profile->builtin)
+  {
+    PuiProfile *profile;
+
+    pui_profile_editor_run_edit(priv->master);
+    profile = pui_master_get_active_profile(priv->master);
+
+    if (profile == priv->active_profile)
+      pui_main_view_activate_profile(view, profile);
+  }
+  */
+}
+
+static void
 pui_main_view_init(PuiMainView *view)
 {
   PuiMainViewPrivate *priv = PRIVATE(view);
@@ -763,8 +790,8 @@ pui_main_view_init(PuiMainView *view)
                    G_CALLBACK(on_button_size_request), NULL);
   hildon_gtk_widget_set_theme_size(priv->edit_status_button,
                                    HILDON_SIZE_FINGER_HEIGHT);
-/*  g_signal_connect(priv->edit_status_button, "clicked",
-                   G_CALLBACK(on_edit_status_button_clicked), view);*/
+  g_signal_connect(priv->edit_status_button, "clicked",
+                   G_CALLBACK(on_edit_status_button_clicked), view);
   gtk_container_add(GTK_CONTAINER(GTK_DIALOG(view)->action_area),
                     priv->edit_status_button);
 
@@ -774,8 +801,8 @@ pui_main_view_init(PuiMainView *view)
                    G_CALLBACK(on_button_size_request), NULL);
   hildon_gtk_widget_set_theme_size(priv->new_status_button,
                                    HILDON_SIZE_FINGER_HEIGHT);
-  /*g_signal_connect_data(priv->new_status_button, "clicked",
-                        G_CALLBACK(on_new_status_button_clicked), view);*/
+  g_signal_connect(priv->new_status_button, "clicked",
+                   G_CALLBACK(on_new_status_button_clicked), view);
   gtk_container_add(GTK_CONTAINER(GTK_DIALOG(view)->action_area),
                     priv->new_status_button);
 
