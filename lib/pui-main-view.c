@@ -120,6 +120,56 @@ set_active_profile(PuiMainView *view, PuiProfile *profile)
   update_buttons_visibility(view);
 }
 
+static void
+on_button_clicked(GtkWidget *button, PuiMainView *view)
+{
+  if (gtk_toggle_button_get_active((GtkToggleButton *)button))
+  {
+    PuiProfile *profile = g_object_get_data(G_OBJECT(button), "puiprofile");
+
+    g_return_if_fail(profile != NULL);
+
+    set_active_profile(view, profile);
+  }
+}
+
+static void
+on_button_size_request(GtkWidget *widget, GtkRequisition *requisition,
+                       gpointer user_data)
+{
+  requisition->width = 0;
+}
+
+static void
+hack_fix_button(GtkWidget *button)
+{
+  GtkWidget *alignment;
+  GtkWidget *hbox;
+  GList *children;
+  GList *l;
+
+  alignment = gtk_bin_get_child(GTK_BIN(button));
+
+  g_return_if_fail(GTK_IS_ALIGNMENT(alignment));
+
+  hbox = gtk_bin_get_child(GTK_BIN(alignment));
+
+  g_return_if_fail(GTK_IS_BOX(hbox));
+
+  children = gtk_container_get_children(GTK_CONTAINER(hbox));
+
+  for (l = children; l; l = l->next)
+  {
+    if (GTK_IS_LABEL(l->data))
+    {
+      gtk_box_set_child_packing(
+        GTK_BOX(hbox), l->data, TRUE, TRUE, 0, GTK_PACK_END);
+    }
+  }
+
+  g_list_free(children);
+}
+
 static GtkWidget *
 create_profile_button(PuiMainView *view, PuiProfile *profile)
 {
@@ -182,6 +232,179 @@ static void
 on_location_value_changed(HildonPickerButton *button, PuiMainView *view)
 {
   PRIVATE(view)->location_level = hildon_picker_button_get_active(button);
+}
+
+static void
+on_button_size_allocate(GtkWidget *widget, GdkRectangle *allocation,
+                        PuiMainView *view)
+{
+  g_object_set(PRIVATE(view)->location_picker,
+               "width-request", allocation->width,
+               NULL);
+}
+
+static void
+on_profile_created(PuiMaster *master, PuiProfile *profile, PuiMainView *view)
+{
+  PuiMainViewPrivate *priv = PRIVATE(view);
+  GtkWidget *button = create_profile_button(view, profile);
+
+  gtk_table_attach_defaults(GTK_TABLE(priv->table), button,
+                            priv->profile_buttons_count % 3,
+                            priv->profile_buttons_count % 3 + 1,
+                            priv->profile_buttons_count / 3 + 1,
+                            priv->profile_buttons_count / 3 + 2);
+  priv->profile_buttons_count++;
+  update_new_status_button_visibility(priv);
+}
+
+static GtkWidget *
+find_profile_button(PuiMainView *view, PuiProfile *profile)
+{
+  PuiMainViewPrivate *priv = PRIVATE(view);
+  GList *l;
+
+  for (l = GTK_TABLE(priv->table)->children; l; l = l->next)
+  {
+    GtkTableChild *child = l->data;
+
+    if (g_object_get_data(G_OBJECT(child->widget), "puiprofile") == profile)
+      return child->widget;
+  }
+
+  return NULL;
+}
+
+static void
+on_profile_changed(PuiMaster *master, PuiProfile *profile, PuiMainView *view)
+{
+  PuiMainViewPrivate *priv = PRIVATE(view);
+  GtkWidget *button = find_profile_button(view, profile);
+  GdkPixbuf *icon;
+
+  g_return_if_fail(button != NULL);
+
+  gtk_button_set_label(GTK_BUTTON(button), profile->name);
+  icon = pui_master_get_profile_icon(priv->master, profile);
+
+  if (icon)
+  {
+    GtkWidget *image = gtk_image_new_from_pixbuf(icon);
+
+    gtk_button_set_image(GTK_BUTTON(button), image);
+    gtk_widget_show(image);
+  }
+
+  hack_fix_button(button);
+  update_buttons_visibility(view);
+}
+
+static void
+on_profile_deleted(PuiMaster *master, PuiProfile *profile, PuiMainView *view)
+{
+  g_assert(0);
+}
+
+static void
+on_vbox_size_request(GtkWidget *widget, GtkRequisition *requisition,
+                     PuiMainView *view)
+{
+  gtk_widget_queue_resize(GTK_WIDGET(view));
+}
+
+static void
+on_row_activated(GtkTreeView *tree_view, GtkTreePath *path,
+                 GtkTreeViewColumn *column, PuiMainView *view)
+{
+  PuiMainViewPrivate *priv = PRIVATE(view);
+  GtkTreeIter iter;
+
+  if (priv->auic)
+  {
+    GtkTreeModel *model = gtk_tree_view_get_model(tree_view);
+
+    if (gtk_tree_model_get_iter(model, &iter, path))
+    {
+      TpAccount *account = NULL;
+
+      gtk_tree_model_get(model, &iter,
+                         COLUMN_ACCOUNT, &account,
+                         -1);
+
+      if (account)
+      {
+        GHashTable *parameters;
+        const gchar *user_name;
+        gchar *service;
+
+        parameters = (GHashTable *)tp_account_get_parameters(account);
+        user_name = tp_asv_get_string(parameters, "account");
+        service = g_strdup_printf("%s/%s",
+                                  tp_account_get_cm_name(account),
+                                  tp_account_get_protocol_name(account));
+        auic_client_open_edit_account(priv->auic, service, user_name);
+        g_free(service);
+        g_object_unref(account);
+      }
+      else
+        auic_client_open_accounts_list(priv->auic);
+    }
+  }
+}
+
+static void
+on_row_deleted(GtkTreeModel *tree_model, GtkTreePath *path, PuiMainView *view)
+{
+  if (gtk_tree_model_iter_n_children(tree_model, NULL) == 1)
+    gtk_dialog_response(GTK_DIALOG(view), GTK_RESPONSE_CLOSE);
+}
+
+static void
+on_presence_changed(PuiMaster *master, TpConnectionPresenceType type,
+                    const gchar *status_message, guint status,
+                    PuiMainView *view)
+{
+  PuiMainViewPrivate *priv = PRIVATE(view);
+  /* FIXME status flags */
+  gboolean connecting = (status & 4) ? 1 : 0;
+
+  if ((priv->flags & 1) != connecting)
+  {
+    priv->flags &= ~1;
+    priv->flags |= ((status & 4) != 0 ? 1 : 0);
+
+    if (gtk_widget_get_mapped(GTK_WIDGET(view)) &&
+        pui_master_get_display_on(priv->master))
+    {
+      hildon_gtk_window_set_progress_indicator(GTK_WINDOW(view), connecting);
+    }
+  }
+}
+
+static void
+on_presence_support(PuiMaster *master, gboolean supported, PuiMainView *view)
+{
+  PuiMainViewPrivate *priv = PRIVATE(view);
+  int left_attach;
+  int right_attach;
+
+  if (supported)
+  {
+    gtk_widget_show(priv->busy_button);
+    left_attach = 2;
+    right_attach = 3;
+  }
+  else
+  {
+    gtk_widget_hide(priv->busy_button);
+    left_attach = 1;
+    right_attach = 2;
+  }
+
+  gtk_container_child_set(GTK_CONTAINER(priv->table), priv->offline_button,
+                          "left-attach", left_attach,
+                          "right-attach", right_attach,
+                          NULL);
 }
 
 static GObject *
@@ -292,7 +515,7 @@ pui_main_view_constructor(GType type, guint n_construct_properties,
     {
       priv->first_button = profile_button;
       g_signal_connect(profile_button, "size-allocate",
-                       G_CALLBACK(on_button_size_allocate), priv);
+                       G_CALLBACK(on_button_size_allocate), view);
     }
 
     if (profile->builtin)
@@ -383,6 +606,48 @@ pui_main_view_constructor(GType type, guint n_construct_properties,
 }
 
 static void
+pui_main_view_dispose(GObject *object)
+{
+  PuiMainViewPrivate *priv = PRIVATE(object);
+
+  if (priv->auic)
+  {
+    g_object_unref(priv->auic);
+    priv->auic = NULL;
+  }
+
+  if (priv->master)
+  {
+    g_signal_handlers_disconnect_matched(
+      priv->master, G_SIGNAL_MATCH_DATA | G_SIGNAL_MATCH_FUNC, 0, 0, NULL,
+      on_presence_support, object);
+    g_signal_handlers_disconnect_matched(
+      priv->master, G_SIGNAL_MATCH_DATA | G_SIGNAL_MATCH_FUNC, 0, 0, NULL,
+      on_presence_changed, object);
+    g_signal_handlers_disconnect_matched(
+      priv->master, G_SIGNAL_MATCH_DATA | G_SIGNAL_MATCH_FUNC, 0, 0, NULL,
+      on_profile_created, object);
+    g_signal_handlers_disconnect_matched(
+      priv->master, G_SIGNAL_MATCH_DATA | G_SIGNAL_MATCH_FUNC, 0, 0, NULL,
+      on_profile_changed, object);
+    g_signal_handlers_disconnect_matched(
+      priv->master, G_SIGNAL_MATCH_DATA | G_SIGNAL_MATCH_FUNC, 0, 0, NULL,
+      on_profile_deleted, object);
+    g_signal_handlers_disconnect_matched(
+      pui_master_get_model(priv->master),
+      G_SIGNAL_MATCH_DATA | G_SIGNAL_MATCH_FUNC, 0, 0, NULL,
+      on_row_deleted, object);
+    g_signal_handlers_disconnect_matched(
+      priv->master, G_SIGNAL_MATCH_DATA | G_SIGNAL_MATCH_FUNC, 0, 0, NULL,
+      on_screen_state_changed, object);
+    g_object_unref(priv->master);
+    priv->master = NULL;
+  }
+
+  G_OBJECT_CLASS(pui_main_view_parent_class)->dispose(object);
+}
+
+static void
 pui_main_view_set_property(GObject *object, guint property_id,
                            const GValue *value, GParamSpec *pspec)
 {
@@ -463,6 +728,68 @@ pui_main_view_class_init(PuiMainViewClass *klass)
       PUI_TYPE_MASTER, G_PARAM_CONSTRUCT_ONLY | G_PARAM_WRITABLE));
 }
 
+
+static gboolean
+pui_main_view_activate_profile(PuiMainView *view, PuiProfile *profile)
+{
+  PuiMainViewPrivate *priv = PRIVATE(view);
+  const char *presence_message;
+  gboolean is_not_sip;
+
+  presence_message = hildon_entry_get_text((HildonEntry *)priv->entry);
+
+  if (!presence_message)
+    presence_message = "";
+
+  pui_master_scan_profile(priv->master, profile, &is_not_sip, NULL);
+
+  if (is_not_sip)
+    pui_master_set_location_level(priv->master, priv->location_level);
+
+  pui_master_set_presence_message(priv->master, presence_message);
+  pui_master_activate_profile(priv->master, profile);
+  pui_master_save_config(priv->master);
+
+  return TRUE;
+}
+
+static void
+pui_main_view_init(PuiMainView *view)
+{
+  PuiMainViewPrivate *priv = PRIVATE(view);
+
+  priv->edit_status_button =
+    gtk_button_new_with_label(_("pres_bd_presence_personalise"));
+  g_signal_connect(priv->edit_status_button, "size-request",
+                   G_CALLBACK(on_button_size_request), NULL);
+  hildon_gtk_widget_set_theme_size(priv->edit_status_button,
+                                   HILDON_SIZE_FINGER_HEIGHT);
+/*  g_signal_connect(priv->edit_status_button, "clicked",
+                   G_CALLBACK(on_edit_status_button_clicked), view);*/
+  gtk_container_add(GTK_CONTAINER(GTK_DIALOG(view)->action_area),
+                    priv->edit_status_button);
+
+  priv->new_status_button =
+    gtk_button_new_with_label(_("pres_bd_presence_new_status"));
+  g_signal_connect(priv->new_status_button, "size-request",
+                   G_CALLBACK(on_button_size_request), NULL);
+  hildon_gtk_widget_set_theme_size(priv->new_status_button,
+                                   HILDON_SIZE_FINGER_HEIGHT);
+  /*g_signal_connect_data(priv->new_status_button, "clicked",
+                        G_CALLBACK(on_new_status_button_clicked), view);*/
+  gtk_container_add(GTK_CONTAINER(GTK_DIALOG(view)->action_area),
+                    priv->new_status_button);
+
+  gtk_widget_set_size_request(view->parent.action_area, 174, -1);
+  gtk_dialog_set_has_separator(GTK_DIALOG(view), FALSE);
+
+  gtk_dialog_add_buttons(
+    GTK_DIALOG(view),
+    dgettext("hildon-libs", "wdgt_bd_save"), GTK_RESPONSE_OK,
+    "gtk-cancel", GTK_RESPONSE_CANCEL,
+    NULL);
+}
+
 PuiMainView *
 pui_main_view_new(PuiMaster *master)
 {
@@ -470,4 +797,16 @@ pui_main_view_new(PuiMaster *master)
                       "master", master,
                       "title", _("pres_ti_set_presence_title"),
                       NULL);
+}
+
+void
+pui_main_view_run(PuiMainView *main_view)
+{
+  PuiMainViewPrivate *priv = PRIVATE(main_view);
+
+  while (gtk_dialog_run(&main_view->parent) == GTK_RESPONSE_OK)
+  {
+    if (pui_main_view_activate_profile(main_view, priv->active_profile))
+      break;
+  }
 }

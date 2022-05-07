@@ -1222,6 +1222,12 @@ pui_master_init(PuiMaster *master)
 
   load_config(master);
   mce_dbus_init(master);
+
+  priv->connection_managers =
+    g_hash_table_new_full((GHashFunc)g_str_hash,
+                          (GEqualFunc)g_str_equal,
+                          (GDestroyNotify)g_free,
+                          (GDestroyNotify)g_object_unref);
 }
 
 PuiMaster *
