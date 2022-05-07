@@ -585,7 +585,7 @@ static void
 on_manager_ready(GObject *object, GAsyncResult *res, gpointer user_data)
 {
   TpAccountManager *manager = (TpAccountManager *)object;
-  PuiMaster *master = PUI_MASTER(user_data);
+  PuiMaster *master = user_data;
   GError *error = NULL;
 
   if (!tp_proxy_prepare_finish(object, res, &error))
@@ -632,15 +632,15 @@ cms_ready_cb(GObject *object, GAsyncResult *res, gpointer user_data)
   g_list_free(cms);
 
   g_signal_connect(priv->manager, "account-validity-changed",
-                   G_CALLBACK(on_account_validity_changed_cb), object);
+                   G_CALLBACK(on_account_validity_changed_cb), master);
   g_signal_connect(priv->manager, "account-removed",
-                   G_CALLBACK(on_account_disabled_cb), object);
+                   G_CALLBACK(on_account_disabled_cb), master);
   g_signal_connect(priv->manager, "account-enabled",
-                   G_CALLBACK(on_account_enabled_cb), object);
+                   G_CALLBACK(on_account_enabled_cb), master);
   g_signal_connect(priv->manager, "account-disabled",
-                   G_CALLBACK(on_account_disabled_cb), object);
+                   G_CALLBACK(on_account_disabled_cb), master);
 
-  tp_proxy_prepare_async(priv->manager, NULL, on_manager_ready, object);
+  tp_proxy_prepare_async(priv->manager, NULL, on_manager_ready, master);
 }
 
 static void
@@ -734,14 +734,14 @@ pui_master_constructor(GType type, guint n_construct_properties,
 
   g_return_val_if_fail(object != NULL, NULL);
 
-  master = PUI_MASTER(master);
-  priv = PRIVATE(object);
+  master = PUI_MASTER(object);
+  priv = PRIVATE(master);
 
   tp_list_connection_managers_async(tp_proxy_get_dbus_daemon(priv->manager),
-                                    cms_ready_cb, object);
+                                    cms_ready_cb, master);
 
-  g_signal_connect(object, "presence-changed",
-                   G_CALLBACK(master_presence_changed_cb), NULL);
+  g_signal_connect(master, "presence-changed",
+                   G_CALLBACK(master_presence_changed_cb), master);
   master_presence_changed_cb(master);
   compute_presence_message(master);
 

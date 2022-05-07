@@ -285,7 +285,7 @@ on_presence_changed(PuiMenuItem *item, TpConnectionPresenceType presence_type,
 }
 
 static void
-on_profile_activated(PuiMaster *master, PuiProfile *profile, PuiMenuItem *item)
+on_profile_activated(PuiMenuItem *item, PuiProfile *profile, PuiMaster *master)
 {
   guint status;
 

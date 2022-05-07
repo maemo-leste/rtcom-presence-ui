@@ -325,14 +325,14 @@ pui_account_view_init(PuiAccountView *view)
   GtkCellRenderer *renderer;
   GtkTreeViewColumn *col;
 
-  gtk_tree_selection_set_mode(gtk_tree_view_get_selection(&view->parent),
+  gtk_tree_selection_set_mode(gtk_tree_view_get_selection(GTK_TREE_VIEW(view)),
                               GTK_SELECTION_NONE);
 
   col = g_object_new(GTK_TYPE_TREE_VIEW_COLUMN,
                      "spacing", 8,
                      "expand", TRUE,
                      NULL);
-  renderer = g_object_new(GTK_TYPE_CELL_RENDERER, NULL);
+  renderer = g_object_new(GTK_TYPE_CELL_RENDERER_TEXT, NULL);
   gtk_tree_view_column_pack_start(col, renderer, TRUE);
   gtk_tree_view_column_set_cell_data_func(col, renderer, account_data_func,
                                           view, NULL);

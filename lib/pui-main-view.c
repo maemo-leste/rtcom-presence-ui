@@ -431,7 +431,7 @@ pui_main_view_constructor(GType type, guint n_construct_properties,
   int builtin_idx = 0;
   guint status;
 
-  g_return_val_if_fail( view != NULL, NULL);
+  g_return_val_if_fail(view != NULL, NULL);
 
   priv = PRIVATE(view);
 
@@ -727,7 +727,6 @@ pui_main_view_class_init(PuiMainViewClass *klass)
       "master", "master", "master",
       PUI_TYPE_MASTER, G_PARAM_CONSTRUCT_ONLY | G_PARAM_WRITABLE));
 }
-
 
 static gboolean
 pui_main_view_activate_profile(PuiMainView *view, PuiProfile *profile)
