@@ -1,0 +1,6 @@
+[Desktop Entry]
+Encoding=UTF-8
+Version=1.0
+Type=default
+Name=pres_ap_feature_name
+X-Path=librtcom-presence-ui.so

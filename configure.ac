@@ -35,6 +35,9 @@ AC_PATH_PROG(GLIB_GENMARSHAL, glib-genmarshal)
 hildondesktoplibdir=`pkg-config libhildondesktop-1 --variable=hildondesktoplibdir`
 AC_SUBST(hildondesktoplibdir)
 
+hildonstatusmenudesktopentrydir=`pkg-config libhildondesktop-1 --variable=hildonstatusmenudesktopentrydir`
+AC_SUBST(hildonstatusmenudesktopentrydir)
+
 #+++++++++++++++++++
 # Misc stuff
 #+++++++++++++++++++
