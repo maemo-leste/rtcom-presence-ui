@@ -4,7 +4,8 @@ librtcom_presence_ui_ladir = $(hildondesktoplibdir)
 librtcom_presence_ui_la_CFLAGS = $(PRESENCE_UI_CFLAGS)
 
 librtcom_presence_ui_la_LDFLAGS =					\
-		-Wl,--as-needed $(PRESENCE_UI_LIBS) -Wl,--no-undefined
+		-Wl,--as-needed $(PRESENCE_UI_LIBS) -Wl,--no-undefined	\
+		-module -avoid-version
 
 librtcom_presence_ui_la_SOURCES =					\
 		pui-marshal.c						\
