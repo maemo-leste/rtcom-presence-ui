@@ -20,15 +20,19 @@
 #include "config.h"
 
 #include <glib/gi18n-lib.h>
+
+#ifdef ENABLE_LOCATION
 #include <iphbd/libiphb.h>
 #include <location/location-gps-device.h>
 #include <location/location-gpsd-control.h>
 #include <navigation/navigation-provider.h>
+#endif
 
 #include <errno.h>
 
 #include "pui-location.h"
 
+#ifdef ENABLE_LOCATION
 struct _iphb_event_source
 {
   GSource source;
@@ -40,12 +44,14 @@ struct _iphb_event_source
 };
 
 typedef struct _iphb_event_source iphb_event_source;
+#endif
 
 struct _PuiLocationPrivate
 {
   gboolean disposed;
   PuiLocationLevel level;
   gchar *locations[4];
+#ifdef ENABLE_LOCATION
   LocationGPSDControl *gpsd_control;
   LocationGPSDevice *gps_device;
   NavigationProvider *navigation;
@@ -59,6 +65,7 @@ struct _PuiLocationPrivate
   unsigned short heartbeat_interval;
   gboolean hb_active;
   gboolean waiting_address;
+#endif
 };
 
 typedef struct _PuiLocationPrivate PuiLocationPrivate;
@@ -82,6 +89,7 @@ enum
 
 static guint signals[LAST_SIGNAL] = { 0 };
 
+#ifdef ENABLE_LOCATION
 static void
 pui_location_iphb_start(PuiLocation *self, unsigned short mintime,
                         unsigned short maxtime);
@@ -114,14 +122,17 @@ pui_location_finalize(GObject *object)
 
   G_OBJECT_CLASS(pui_location_parent_class)->finalize(object);
 }
+#endif
 
 static void
 pui_location_class_init(PuiLocationClass *klass)
 {
   GObjectClass *object_class = G_OBJECT_CLASS(klass);
 
+#ifdef ENABLE_LOCATION
   object_class->dispose = pui_location_dispose;
   object_class->finalize = pui_location_finalize;
+#endif
 
   signals[ERROR] = g_signal_new(
       "error", G_TYPE_FROM_CLASS(klass), G_SIGNAL_RUN_LAST,
@@ -136,6 +147,7 @@ pui_location_class_init(PuiLocationClass *klass)
 static void
 pui_location_init(PuiLocation *self)
 {
+#ifdef ENABLE_LOCATION
   PuiLocationPrivate *priv = PRIVATE(self);
   int hb_int;
 
@@ -149,8 +161,10 @@ pui_location_init(PuiLocation *self)
     priv->heartbeat_interval = hb_int;
   else
     priv->heartbeat_interval = 0;
+#endif
 }
 
+#ifdef ENABLE_LOCATION
 static GString *
 append_string(GString *str, const gchar *sep, const gchar *s)
 {
@@ -508,40 +522,6 @@ gps_device_changed_cb(LocationGPSDevice *gps_device, PuiLocation *self)
   }
 }
 
-void
-pui_location_stop(PuiLocation *location)
-{
-  PuiLocationPrivate *priv = PRIVATE(location);
-
-  if (priv->hb_source)
-  {
-    g_source_unref(&priv->hb_source->source);
-    priv->hb_source = NULL;
-  }
-
-  if (priv->gpsd_control)
-  {
-    location_gpsd_control_stop(priv->gpsd_control);
-    g_object_unref(priv->gpsd_control);
-    priv->gpsd_control = NULL;
-  }
-
-  if (priv->gps_device)
-  {
-    g_signal_handlers_disconnect_matched(
-      priv->gps_device, G_SIGNAL_MATCH_DATA | G_SIGNAL_MATCH_FUNC, 0, 0, NULL,
-      gps_device_changed_cb, location);
-    g_object_unref(priv->gps_device);
-    priv->gps_device = NULL;
-  }
-
-  if (priv->navigation)
-  {
-    g_object_unref(priv->navigation);
-    priv->navigation = NULL;
-  }
-}
-
 static void
 gpsd_control_error_verbose_cb(LocationGPSDControl *control, gint error,
                               PuiLocation *self)
@@ -557,9 +537,12 @@ gpsd_control_error_verbose_cb(LocationGPSDControl *control, gint error,
   g_signal_emit(self, signals[ERROR], 0, (guint)error);
 }
 
+#endif
+
 void
 pui_location_start(PuiLocation *location)
 {
+#ifdef ENABLE_LOCATION
   PuiLocationPrivate *priv = PRIVATE(location);
 
   if (!priv->gpsd_control)
@@ -597,6 +580,43 @@ pui_location_start(PuiLocation *location)
     if (!priv->gpsd_control_started)
       location_gpsd_control_start(priv->gpsd_control);
   }
+#endif
+}
+
+void
+pui_location_stop(PuiLocation *location)
+{
+#ifdef ENABLE_LOCATION
+  PuiLocationPrivate *priv = PRIVATE(location);
+
+  if (priv->hb_source)
+  {
+    g_source_unref(&priv->hb_source->source);
+    priv->hb_source = NULL;
+  }
+
+  if (priv->gpsd_control)
+  {
+    location_gpsd_control_stop(priv->gpsd_control);
+    g_object_unref(priv->gpsd_control);
+    priv->gpsd_control = NULL;
+  }
+
+  if (priv->gps_device)
+  {
+    g_signal_handlers_disconnect_matched(
+      priv->gps_device, G_SIGNAL_MATCH_DATA | G_SIGNAL_MATCH_FUNC, 0, 0, NULL,
+      gps_device_changed_cb, location);
+    g_object_unref(priv->gps_device);
+    priv->gps_device = NULL;
+  }
+
+  if (priv->navigation)
+  {
+    g_object_unref(priv->navigation);
+    priv->navigation = NULL;
+  }
+#endif
 }
 
 PuiLocationLevel
@@ -622,5 +642,7 @@ pui_location_get_location(PuiLocation *location)
 void
 pui_location_reset(PuiLocation *location)
 {
+#ifdef ENABLE_LOCATION
   PRIVATE(location)->gpsd_control_started = FALSE;
+#endif
 }
