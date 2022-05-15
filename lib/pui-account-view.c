@@ -137,12 +137,11 @@ pui_account_view_dispose(GObject *object)
     priv->timer_id = 0;
   }
 
-  g_signal_handlers_disconnect_matched(
-    priv->master, G_SIGNAL_MATCH_DATA | G_SIGNAL_MATCH_FUNC, 0, 0, NULL,
-    on_screen_state_changed, object);
-
   if (priv->master)
   {
+    g_signal_handlers_disconnect_matched(
+      priv->master, G_SIGNAL_MATCH_DATA | G_SIGNAL_MATCH_FUNC, 0, 0, NULL,
+      on_screen_state_changed, object);
     g_object_unref(priv->master);
     priv->master = NULL;
   }
