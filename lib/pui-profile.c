@@ -55,10 +55,10 @@ pui_profile_set_account_presence(PuiProfile *profile, const char *account_id,
 
   for (l = profile->accounts; l; l = l->next)
   {
+    account = l->data;
+
     if (!strcmp(account->account_id, account_id))
       break;
-
-    account->presence = presence;
   }
 
   if (l)

@@ -407,8 +407,9 @@ compute_global_presence_idle(gpointer user_data)
 
             if (err_msg)
             {
-              status_message =
-                g_strdup_printf(_("pres_li_account_with_error"), err_msg);
+              const gchar *fmt = _("pres_li_account_with_error");
+
+              status_message = g_strdup_printf(fmt, err_msg);
             }
           }
 
@@ -945,8 +946,6 @@ static void
 on_account_validity_changed_cb(TpAccountManager *am, TpAccount *account,
                                gboolean valid, PuiMaster *master)
 {
-  GtkTreeIter iter;
-
   if (valid)
     on_account_enabled_cb(am, account, master);
   else
@@ -1155,6 +1154,7 @@ pui_master_set_property(GObject *object, guint property_id, const GValue *value,
       g_assert(priv->manager == NULL);
 
       priv->manager = tp_account_manager_new(g_value_get_object(value));
+      break;
     }
     default:
     {

@@ -82,6 +82,7 @@ pui_list_picker_set_property(GObject *object, guint property_id,
                          G_CALLBACK(on_button_clicked), GINT_TO_POINTER(idx));
         idx++;
       }
+      break;
     }
     default:
     {

@@ -127,9 +127,9 @@ pui_location_finalize(GObject *object)
 static void
 pui_location_class_init(PuiLocationClass *klass)
 {
+#ifdef ENABLE_LOCATION
   GObjectClass *object_class = G_OBJECT_CLASS(klass);
 
-#ifdef ENABLE_LOCATION
   object_class->dispose = pui_location_dispose;
   object_class->finalize = pui_location_finalize;
 #endif

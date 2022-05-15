@@ -521,7 +521,7 @@ button_realize_cb(GtkWidget *button, PuiMenuItem *item)
   PuiMenuItemPrivate *priv = PRIVATE(item);
   gint spacing = 0;
 
-  gtk_widget_style_get(button, "image-spacing", &spacing);
+  gtk_widget_style_get(button, "image-spacing", &spacing, NULL);
   gtk_box_set_spacing(GTK_BOX(priv->image->parent), spacing);
 }
 

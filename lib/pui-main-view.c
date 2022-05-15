@@ -657,6 +657,7 @@ pui_main_view_set_property(GObject *object, guint property_id,
 
       g_assert(priv->master == NULL);
       priv->master = g_value_dup_object(value);
+      break;
     }
     default:
     {

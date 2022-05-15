@@ -169,6 +169,7 @@ pui_account_view_set_property(GObject *object, guint property_id,
         GTK_TREE_MODEL(pui_master_get_model(priv->master)));
       g_signal_connect(priv->master, "screen-state-changed",
                        G_CALLBACK(on_screen_state_changed), view);
+      break;
     }
     default:
     {
