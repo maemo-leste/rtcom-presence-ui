@@ -67,6 +67,7 @@ struct _PuiMasterPrivate
   gboolean display_on;
   gboolean has_disconnected_account;
   GHashTable *connection_managers;
+  time_t last_info_time;
 };
 
 typedef struct _PuiMasterPrivate PuiMasterPrivate;
@@ -184,7 +185,17 @@ account_can_change_presence(PuiMaster *master, TpAccount *account)
 
   g_return_val_if_fail(protocol, FALSE);
 
+  if (!tp_proxy_has_interface_by_id(protocol,
+                                    TP_IFACE_QUARK_PROTOCOL_INTERFACE_PRESENCE))
+  {
+    return FALSE;
+  }
+
   presences = tp_protocol_dup_presence_statuses(protocol);
+
+  /* assume we can if list is empty */
+  if (!presences)
+    return TRUE;
 
   for (l = presences; l; l = l->next)
   {
@@ -204,10 +215,370 @@ account_can_change_presence(PuiMaster *master, TpAccount *account)
   return rv;
 }
 
+static void
+master_presence_changed_cb(PuiMaster *master)
+{
+  PuiMasterPrivate *priv = PRIVATE(master);
+
+  if (!(priv->global_status & PUI_MASTER_STATUS_CONNECTED) ||
+      (pui_master_get_location_level(master) == PUI_LOCATION_LEVEL_NONE))
+  {
+    pui_location_stop(priv->location);
+  }
+  else
+    pui_location_start(priv->location);
+}
+
+static void
+list_store_enable_sort(GtkTreeSortable *sortable, gboolean enable)
+{
+  gint id;
+
+  if (enable)
+    id = GTK_TREE_SORTABLE_DEFAULT_SORT_COLUMN_ID;
+  else
+    id = GTK_TREE_SORTABLE_UNSORTED_SORT_COLUMN_ID;
+
+  gtk_tree_sortable_set_sort_column_id(sortable, id, GTK_SORT_ASCENDING);
+}
+
+static const char *
+get_presence_icon(TpConnectionPresenceType type)
+{
+  if (type == TP_CONNECTION_PRESENCE_TYPE_AVAILABLE)
+    return "general_presence_online";
+
+  if (type == TP_CONNECTION_PRESENCE_TYPE_OFFLINE)
+    return "general_presence_offline";
+
+  return "general_presence_busy";
+}
+
 static gboolean
 compute_global_presence_idle(gpointer user_data)
 {
   PuiMaster *master = user_data;
+  PuiMasterPrivate *priv = PRIVATE(master);
+  GtkTreeModel *tree_model = GTK_TREE_MODEL(priv->list_store);
+  gchar *presence_icon_name;
+  GdkPixbuf *presence_icon;
+  TpConnectionStatus account_connection_status;
+  const gchar *account_old_presence;
+  TpConnectionStatusReason account_status_reason;
+  gchar *status_message = NULL;
+  GtkTreeIter iter;
+  TpConnectionStatus account_old_connection_status;
+  TpAccount *account;
+  gboolean is_changing_status;
+  TpConnectionStatusReason account_old_status_reason;
+  TpConnectionPresenceType type;
+
+  list_store_enable_sort(GTK_TREE_SORTABLE(priv->list_store), FALSE);
+
+  priv->global_presence_type = TP_CONNECTION_PRESENCE_TYPE_OFFLINE;
+  priv->global_status = PUI_MASTER_STATUS_NONE;
+
+  if (!gtk_tree_model_get_iter_first(tree_model, &iter))
+  {
+    master_presence_changed_cb(master);
+    g_signal_emit(master, signals[PRESENCE_CHANGED], 0,
+                  TP_CONNECTION_PRESENCE_TYPE_OFFLINE, priv->status_message, 0);
+  }
+  else
+  {
+    int active_accounts_count = 0;
+    gchar *message;
+
+    do
+    {
+      gtk_tree_model_get(
+        tree_model, &iter,
+        COLUMN_ACCOUNT, &account,
+        COLUMN_CONNECTION_STATUS, &account_old_connection_status,
+        COLUMN_STATUS_REASON, &account_old_status_reason,
+        COLUMN_IS_CHANGING_STATUS, &is_changing_status,
+        -1);
+
+      if (account)
+      {
+        gboolean not_connected = TRUE;
+        gboolean can_change_presence;
+
+        can_change_presence = account_can_change_presence(master, account);
+        account_connection_status =
+          tp_account_get_connection_status(account, &account_status_reason);
+
+        if (account_connection_status == TP_CONNECTION_STATUS_CONNECTING)
+        {
+          if (account_old_connection_status == TP_CONNECTION_STATUS_CONNECTED)
+            play_account_disconnected(master);
+
+          if (account_old_connection_status == TP_CONNECTION_STATUS_CONNECTING)
+            not_connected = FALSE;
+
+          if (can_change_presence)
+          {
+            const gchar *presence =
+              pui_profile_get_presence(priv->active_profile, account);
+
+            type = pui_master_get_presence_type(master, account, presence);
+          }
+          else
+            type = TP_CONNECTION_PRESENCE_TYPE_AVAILABLE;
+
+          priv->global_status |= PUI_MASTER_STATUS_CONNECTING;
+        }
+        else if (account_connection_status == TP_CONNECTION_STATUS_DISCONNECTED)
+        {
+          const gchar *err_msg;
+          const gchar *presence;
+
+          if (account_old_connection_status == TP_CONNECTION_STATUS_CONNECTED)
+            play_account_disconnected(master);
+
+          presence = pui_profile_get_presence(priv->active_profile,
+                                              account);
+
+          if (!(pui_master_get_presence_type(master, account, presence) ==
+                TP_CONNECTION_PRESENCE_TYPE_OFFLINE))
+          {
+            priv->global_status |= PUI_MASTER_STATUS_ERROR;
+
+            if (is_changing_status &&
+                (account_status_reason !=
+                 TP_CONNECTION_STATUS_REASON_REQUESTED))
+            {
+              priv->global_status |= PUI_MASTER_STATUS_REASON_ERROR;
+            }
+
+            switch (account_status_reason)
+            {
+              case TP_CONNECTION_STATUS_REASON_NONE_SPECIFIED:
+              case TP_CONNECTION_STATUS_REASON_NETWORK_ERROR:
+              {
+                err_msg = _("pres_li_network_error");
+                break;
+              }
+              case TP_CONNECTION_STATUS_REASON_REQUESTED:
+              {
+                err_msg = _("pres_ib_network_error");
+                break;
+              }
+              case TP_CONNECTION_STATUS_REASON_AUTHENTICATION_FAILED:
+              {
+                err_msg = _("pres_li_authentication_error");
+                break;
+              }
+              case TP_CONNECTION_STATUS_REASON_ENCRYPTION_ERROR:
+              {
+                err_msg = _("pres_li_encryption_error");
+                break;
+              }
+              case TP_CONNECTION_STATUS_REASON_NAME_IN_USE:
+              {
+                err_msg = _("pres_li_error_name_in_use");
+                break;
+              }
+              case TP_CONNECTION_STATUS_REASON_CERT_NOT_PROVIDED:
+              case TP_CONNECTION_STATUS_REASON_CERT_UNTRUSTED:
+              case TP_CONNECTION_STATUS_REASON_CERT_EXPIRED:
+              case TP_CONNECTION_STATUS_REASON_CERT_NOT_ACTIVATED:
+              case TP_CONNECTION_STATUS_REASON_CERT_HOSTNAME_MISMATCH:
+              case TP_CONNECTION_STATUS_REASON_CERT_FINGERPRINT_MISMATCH:
+              case TP_CONNECTION_STATUS_REASON_CERT_SELF_SIGNED:
+              case TP_CONNECTION_STATUS_REASON_CERT_OTHER_ERROR:
+              {
+                err_msg = _("pres_li_error_certificate");
+                break;
+              }
+              default:
+              {
+                err_msg = NULL;
+                break;
+              }
+            }
+
+#if 0
+            gtk_tree_model_get(tree_model, &iter,
+                               COLUMN_STATUS_MESSAGE, &message,
+                               -1);
+            g_free(message);
+#endif
+
+            if (err_msg)
+            {
+              status_message =
+                g_strdup_printf(_("pres_li_account_with_error"), err_msg);
+            }
+          }
+
+          type = TP_CONNECTION_PRESENCE_TYPE_OFFLINE;
+        }
+        else
+        {
+          gboolean not_sip;
+          gboolean msg_diff = FALSE;
+          const char *old_status_message;
+
+          if (account_old_connection_status)
+            play_account_connected(master);
+          else
+            not_connected = FALSE;
+
+          if (!can_change_presence)
+            type = TP_CONNECTION_PRESENCE_TYPE_AVAILABLE;
+          else
+            type = tp_account_get_current_presence(account, NULL, &message);
+
+          not_sip = tp_account_is_not_sip(account);
+
+          if (not_sip)
+          {
+            old_status_message = priv->status_message;
+            priv->global_status |= PUI_MASTER_STATUS_CONNECTED;
+
+            if (!old_status_message)
+              old_status_message = "";
+          }
+
+          msg_diff = g_strcmp0(message, old_status_message);
+
+          if (not_sip && msg_diff)
+          {
+            account_status_reason = 'r';
+            status_message = message;
+            priv->global_status |= PUI_MASTER_STATUS_MESSAGE_CHANGED;
+          }
+
+          if ((!not_sip || (not_sip && msg_diff)) && can_change_presence)
+          {
+            gboolean same_presence_type = FALSE;
+            gboolean was_offline = FALSE;
+
+            account_old_presence =
+              pui_profile_get_presence(priv->active_profile, account);
+
+            if (account_old_presence)
+            {
+              if (account_can_change_presence(master, account))
+              {
+                if (pui_master_get_presence_type(master, account,
+                                                 account_old_presence) ==
+                    tp_account_get_current_presence(account, NULL, NULL))
+                {
+                  same_presence_type = TRUE;
+                }
+              }
+              else
+              {
+                TpConnectionStatus connection_status =
+                  tp_account_get_connection_status(account, NULL);
+
+                if (!strcmp(account_old_presence, "offline"))
+                {
+                  was_offline = TRUE;
+
+                  if (connection_status != TP_CONNECTION_STATUS_DISCONNECTED)
+                    priv->global_status |= PUI_MASTER_STATUS_OFFLINE;
+                }
+                else if (connection_status == TP_CONNECTION_STATUS_CONNECTED)
+                  same_presence_type = TRUE;
+              }
+
+              if (!was_offline && !same_presence_type)
+                priv->global_status |= PUI_MASTER_STATUS_OFFLINE;
+            }
+            else if (account_old_status_reason == 'r')
+              account_status_reason = TP_CONNECTION_STATUS_REASON_REQUESTED;
+          }
+        }
+
+        presence_icon_name = g_strdup(get_presence_icon(type));
+        presence_icon = pui_master_get_icon(master, presence_icon_name,
+                                            ICON_SIZE_MID);
+        g_free(presence_icon_name);
+
+        if (not_connected)
+        {
+          gtk_list_store_set(
+            priv->list_store,
+            &iter,
+            COLUMN_PRESENCE_TYPE, type,
+            COLUMN_PRESENCE_ICON, presence_icon,
+            COLUMN_CONNECTION_STATUS, account_connection_status,
+            COLUMN_STATUS_MESSAGE, status_message,
+            COLUMN_STATUS_REASON, account_status_reason,
+            COLUMN_IS_CHANGING_STATUS, FALSE,
+            -1);
+        }
+        else
+        {
+          gtk_list_store_set(
+            priv->list_store,
+            &iter,
+            COLUMN_PRESENCE_TYPE, type,
+            COLUMN_PRESENCE_ICON, presence_icon,
+            COLUMN_CONNECTION_STATUS, account_connection_status,
+            COLUMN_IS_CHANGING_STATUS, FALSE,
+            -1);
+        }
+
+        g_free(status_message);
+        g_object_unref(account);
+
+        if (can_change_presence)
+        {
+          if (type == TP_CONNECTION_PRESENCE_TYPE_AVAILABLE)
+            priv->global_presence_type = TP_CONNECTION_PRESENCE_TYPE_AVAILABLE;
+          else if ((priv->global_presence_type !=
+                    TP_CONNECTION_PRESENCE_TYPE_AVAILABLE) &&
+                   (type != TP_CONNECTION_PRESENCE_TYPE_OFFLINE))
+          {
+            priv->global_presence_type = TP_CONNECTION_PRESENCE_TYPE_BUSY;
+          }
+        }
+        else
+        {
+          if ((account_connection_status == TP_CONNECTION_STATUS_CONNECTED) ||
+              (account_connection_status == TP_CONNECTION_STATUS_CONNECTING))
+          {
+            active_accounts_count++;
+          }
+        }
+      }
+    }
+    while (gtk_tree_model_iter_next(tree_model, &iter));
+
+    if ((priv->global_presence_type == TP_CONNECTION_PRESENCE_TYPE_OFFLINE) &&
+        (active_accounts_count > 0))
+    {
+      priv->global_presence_type = TP_CONNECTION_PRESENCE_TYPE_AVAILABLE;
+    }
+
+    master_presence_changed_cb(master);
+
+    g_signal_emit(master, signals[PRESENCE_CHANGED], 0,
+                  priv->global_presence_type, priv->status_message,
+                  priv->global_status);
+
+    if (priv->global_status & PUI_MASTER_STATUS_REASON_ERROR)
+    {
+      if (priv->has_disconnected_account)
+      {
+        priv->has_disconnected_account = FALSE;
+
+        if (time(0) - priv->last_info_time > 59)
+        {
+          priv->last_info_time = time(NULL);
+          hildon_banner_show_information(
+            priv->parent, NULL, _("pres_ib_unable_to_connect_to_service"));
+        }
+      }
+    }
+  }
+
+  list_store_enable_sort(GTK_TREE_SORTABLE(priv->list_store), TRUE);
+  priv->compute_global_presence_id = 0;
 
   return FALSE;
 }
@@ -398,14 +769,15 @@ account_add_to_store(PuiMaster *master, TpAccount *account,
   avatar_changed_cb(account, master);
   connection_status = tp_account_get_connection_status(account, NULL);
 
-  gtk_list_store_insert_with_values(priv->list_store, NULL, G_MAXINT32,
-                                    COLUMN_ACCOUNT, account,
-                                    COLUMN_SERVICE_ICON, icon,
-                                    COLUMN_AVATAR, NULL,
-                                    COLUMN_CONNECTION_STATUS, connection_status,
-                                    COLUMN_7, TRUE,
-                                    COLUMN_IS_CHANGING_STATUS, FALSE,
-                                    -1);
+  gtk_list_store_insert_with_values(
+    priv->list_store, NULL, G_MAXINT32,
+    COLUMN_ACCOUNT, account,
+    COLUMN_SERVICE_ICON, icon,
+    COLUMN_AVATAR, NULL,
+    COLUMN_CONNECTION_STATUS, connection_status,
+    COLUMN_STATUS_REASON, TP_CONNECTION_STATUS_REASON_REQUESTED,
+    COLUMN_IS_CHANGING_STATUS, FALSE,
+    -1);
 
   if (connection_status == TP_CONNECTION_STATUS_CONNECTED)
     play_account_connected(master);
@@ -663,20 +1035,6 @@ register_dbus(PuiMaster *self, DBusGConnection *gconnection)
 
   dbus_g_connection_register_g_object(gconnection, "/com/nokia/PresenceUI",
                                       G_OBJECT(self));
-}
-
-static void
-master_presence_changed_cb(PuiMaster *master)
-{
-  PuiMasterPrivate *priv = PRIVATE(master);
-
-  if (((priv->global_status & 0x10) == 0) ||
-      (pui_master_get_location_level(master) == PUI_LOCATION_LEVEL_NONE))
-  {
-    pui_location_stop(priv->location);
-  }
-  else
-    pui_location_start(priv->location);
 }
 
 static void
@@ -1081,19 +1439,6 @@ static void
 location_address_changed_cb(PuiLocation *location, PuiMaster *master)
 {
   compute_presence_message(master);
-}
-
-static void
-list_store_enable_sort(GtkTreeSortable *sortable, gboolean enable)
-{
-  gint id;
-
-  if (enable)
-    id = GTK_TREE_SORTABLE_DEFAULT_SORT_COLUMN_ID;
-  else
-    id = GTK_TREE_SORTABLE_UNSORTED_SORT_COLUMN_ID;
-
-  gtk_tree_sortable_set_sort_column_id(sortable, id, GTK_SORT_ASCENDING);
 }
 
 static gint

@@ -208,15 +208,14 @@ account_data_func(GtkTreeViewColumn *tree_column, GtkCellRenderer *cell,
                   GtkTreeModel *tree_model, GtkTreeIter *iter, gpointer data)
 {
   PuiAccountView *view = data;
-  int unk;
+  TpConnectionStatusReason status_reason;
   gchar *status_message;
   TpAccount *account;
 
   gtk_tree_model_get(tree_model, iter,
                      COLUMN_ACCOUNT, &account,
                      COLUMN_STATUS_MESSAGE, &status_message,
-                     COLUMN_7,
-                     &unk,
+                     COLUMN_STATUS_REASON, &status_reason,
                      -1);
 
   if (account)
@@ -233,7 +232,7 @@ account_data_func(GtkTreeViewColumn *tree_column, GtkCellRenderer *cell,
       const char *color_name;
       gchar *fgcolor;
 
-      if (unk == 'r')
+      if (status_reason == 'r')
         color_name = "SecondaryTextColor";
       else
         color_name = "AttentionColor";

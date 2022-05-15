@@ -41,7 +41,7 @@ struct _PuiMainViewPrivate
   GtkWidget *table;
   GtkWidget *first_button;
   int profile_buttons_count;
-  int flags;
+  gboolean connecting : 1;
   GtkWidget *new_status_button;
   GtkWidget *edit_status_button;
   GtkWidget *vbox;
@@ -216,7 +216,7 @@ on_screen_state_changed(PuiMaster *master, gboolean is_on, PuiMainView *view)
 {
   PuiMainViewPrivate *priv = PRIVATE(view);
 
-  if (priv->flags & 1)
+  if (priv->connecting)
   {
     if (is_on)
     {
@@ -365,13 +365,11 @@ on_presence_changed(PuiMaster *master, TpConnectionPresenceType type,
                     PuiMainView *view)
 {
   PuiMainViewPrivate *priv = PRIVATE(view);
-  /* FIXME status flags */
-  gboolean connecting = (status & 4) ? 1 : 0;
+  gboolean connecting = !!(status & PUI_MASTER_STATUS_CONNECTING);
 
-  if ((priv->flags & 1) != connecting)
+  if (priv->connecting != connecting)
   {
-    priv->flags &= ~1;
-    priv->flags |= ((status & 4) != 0 ? 1 : 0);
+    priv->connecting = connecting;
 
     if (gtk_widget_get_mapped(GTK_WIDGET(view)) &&
         pui_master_get_display_on(priv->master))
@@ -587,7 +585,7 @@ pui_main_view_constructor(GType type, guint n_construct_properties,
                    G_CALLBACK(on_presence_changed), view);
 
   pui_master_get_global_presence(priv->master, NULL, NULL, &status);
-  priv->flags = (priv->flags & ~1) | ((status & 4) != 0);
+  priv->connecting = !!(status & PUI_MASTER_STATUS_CONNECTING);
 
   g_signal_connect(priv->master, "presence-support",
                    G_CALLBACK(on_presence_support), view);
@@ -673,7 +671,8 @@ pui_main_view_map(GtkWidget *widget)
 {
   PuiMainViewPrivate *priv = PRIVATE(widget);
 
-  hildon_gtk_window_set_progress_indicator(GTK_WINDOW(widget), priv->flags & 1);
+  hildon_gtk_window_set_progress_indicator(GTK_WINDOW(widget),
+                                           priv->connecting);
 
   GTK_WIDGET_CLASS(pui_main_view_parent_class)->map(widget);
 }

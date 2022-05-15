@@ -180,7 +180,7 @@ pui_menu_item_update_icon(PuiMenuItem *item, PuiProfile *profile, guint status)
 
   g_return_if_fail(profile != NULL);
 
-  if (status & 0x21)
+  if (status & (PUI_MASTER_STATUS_OFFLINE | PUI_MASTER_STATUS_ERROR))
     icon_name = profile->icon_error;
   else
     icon_name = profile->icon;
@@ -245,7 +245,7 @@ on_presence_changed(PuiMenuItem *item, TpConnectionPresenceType presence_type,
 {
   PuiMenuItemPrivate *priv = PRIVATE(item);
 
-  if (status & 4)
+  if (status & PUI_MASTER_STATUS_CONNECTING)
   {
     if (!priv->update_icons_id)
     {
@@ -276,7 +276,8 @@ on_presence_changed(PuiMenuItem *item, TpConnectionPresenceType presence_type,
 
     profile = pui_master_get_active_profile(priv->master);
     type = get_profile_presence_type(presence_type, profile);
-    status_icon_name = get_status_icon_name(item, type, status & 1);
+    status_icon_name = get_status_icon_name(
+          item, type, !!(status & PUI_MASTER_STATUS_ERROR));
     update_status_area_icon(item, status_icon_name);
     pui_menu_item_update_icon(item, profile, status);
   }
@@ -311,7 +312,7 @@ on_profile_changed(PuiMenuItem *item, PuiProfile *profile, PuiMaster *master)
     {
       const gchar *icon;
 
-      if ((status & 0x21) != 0)
+      if (status & (PUI_MASTER_STATUS_OFFLINE | PUI_MASTER_STATUS_ERROR))
         icon = profile->icon_error;
       else
         icon = profile->icon;
