@@ -35,6 +35,8 @@ AC_PATH_PROG(GLIB_GENMARSHAL, glib-genmarshal)
 hildondesktoplibdir=`pkg-config libhildondesktop-1 --variable=hildondesktoplibdir`
 AC_SUBST(hildondesktoplibdir)
 
+AC_DEFINE_UNQUOTED(HILDON_PLUGIN_DIR, "${hildondesktoplibdir}", [Hildon status menu plugins directory])
+
 hildonstatusmenudesktopentrydir=`pkg-config libhildondesktop-1 --variable=hildonstatusmenudesktopentrydir`
 AC_SUBST(hildonstatusmenudesktopentrydir)
 
@@ -68,5 +70,6 @@ AC_DEFINE_UNQUOTED(GETTEXT_PACKAGE, "${GETTEXT_PACKAGE}", [gettext package])
 AC_OUTPUT([
 	Makefile
 	lib/Makefile
+	src/Makefile
 ])
 

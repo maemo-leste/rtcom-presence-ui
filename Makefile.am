@@ -1,4 +1,4 @@
-SUBDIRS = lib
+SUBDIRS = lib src
 
 hildonstatusmenudesktopentry_DATA = rtcom-presence-ui.desktop
 EXTRA_DIST = $(hildonstatusmenudesktopentry_DATA)

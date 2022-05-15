@@ -22,11 +22,11 @@
 #include <glib/gi18n-lib.h>
 #include <libhildondesktop/libhildondesktop.h>
 
-#include "pui-master.h"
 #include "pui-main-view.h"
+#include "pui-master.h"
 
-#define PUI_TYPE_MENU_ITEM \
-  (pui_menu_item_get_type())
+#include "pui-module.h"
+
 #define PUI_MENU_ITEM(obj) \
   (G_TYPE_CHECK_INSTANCE_CAST((obj), \
                               PUI_TYPE_MENU_ITEM, \
@@ -80,13 +80,10 @@ typedef struct _PuiMenuItemPrivate PuiMenuItemPrivate;
   ((PuiMenuItemPrivate *) \
    pui_menu_item_get_instance_private((PuiMenuItem *)(item)))
 
-HD_DEFINE_PLUGIN_MODULE_EXTENDED(
+HD_DEFINE_PLUGIN_MODULE_WITH_PRIVATE(
   PuiMenuItem,
   pui_menu_item,
-  HD_TYPE_STATUS_MENU_ITEM,
-  G_ADD_PRIVATE_DYNAMIC(PuiMenuItem),
-  {},
-  {}
+  HD_TYPE_STATUS_MENU_ITEM
 )
 
 enum
@@ -277,7 +274,7 @@ on_presence_changed(PuiMenuItem *item, TpConnectionPresenceType presence_type,
     profile = pui_master_get_active_profile(priv->master);
     type = get_profile_presence_type(presence_type, profile);
     status_icon_name = get_status_icon_name(
-          item, type, !!(status & PUI_MASTER_STATUS_ERROR));
+        item, type, !!(status & PUI_MASTER_STATUS_ERROR));
     update_status_area_icon(item, status_icon_name);
     pui_menu_item_update_icon(item, profile, status);
   }
