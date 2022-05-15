@@ -1,0 +1,15 @@
+#!/usr/bin/make -f
+
+#export DH_VERBOSE = 1
+
+%:
+	dh $@ --with autoreconf
+
+export DEB_BUILD_MAINT_OPTIONS = hardening=+all
+export DEB_CFLAGS_MAINT_APPEND = -Wall -Werror -Wimplicit-fallthrough
+
+override_dh_autoreconf:
+	dh_autoreconf --as-needed
+
+override_dh_auto_install:
+	dh_auto_install --destdir=debian/tmp

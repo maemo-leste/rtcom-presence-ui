@@ -1,0 +1,30 @@
+Source: rtcom-presence-ui
+Section: comm
+Priority: optional
+Maintainer: Ivaylo Dimitrov <ivo.g.dimitrov.75@gmail.com>
+Build-Depends:
+ debhelper (>= 11),
+ libhildon1-dev,
+ libiphb-dev,
+ liblocation-dev,
+ libtelepathy-glib-dev,
+ libcanberra-dev,
+ libprofile-dev,
+ mce-dev,
+ libhildondesktop1-dev,
+ librtcom-accounts-ui-client-dev
+Standards-Version: 4.1.3
+Vcs-Browser: https://github.com/maemo-leste/rtcom-presence-ui
+Vcs-Git: https://github.com/maemo-leste/rtcom-presence-ui.git
+
+Package: rtcom-presence-ui
+Architecture: any
+Multi-Arch: same
+Depends:
+ ${shlibs:Depends},
+ ${misc:Depends},
+ osso-statusbar-presence-l10n-mr0 | osso-statusbar-presence-l10n-mr,
+ hildon-libs-l10n-mr0 | hildon-libs-l10n-mr,
+ rtcom-call-ui-l10n-mr | rtcom-call-ui-l10n-mr0
+Description: RTCom Presence UI
+ The UI for the accounts presence.
