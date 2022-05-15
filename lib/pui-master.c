@@ -419,7 +419,6 @@ compute_global_presence_idle(gpointer user_data)
         {
           gboolean not_sip;
           gboolean msg_diff = FALSE;
-          const char *old_status_message;
 
           if (account_old_connection_status)
             play_account_connected(master);
@@ -435,14 +434,15 @@ compute_global_presence_idle(gpointer user_data)
 
           if (not_sip)
           {
-            old_status_message = priv->status_message;
+            const char *s = priv->status_message;
+
             priv->global_status |= PUI_MASTER_STATUS_CONNECTED;
 
-            if (!old_status_message)
-              old_status_message = "";
-          }
+            if (!s)
+              s = "";
 
-          msg_diff = g_strcmp0(message, old_status_message);
+            msg_diff = g_strcmp0(message, s);
+          }
 
           if (not_sip && msg_diff)
           {
