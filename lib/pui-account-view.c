@@ -221,9 +221,9 @@ account_data_func(GtkTreeViewColumn *tree_column, GtkCellRenderer *cell,
   if (account)
   {
     PuiAccountViewPrivate *priv = PRIVATE(view);
-    const gchar *display_name =
+    const gchar *markup =
       pui_master_get_account_display_name(priv->master, account);
-    gchar *markup = NULL;
+    gchar *s = NULL;
 
     if (status_message)
     {
@@ -255,15 +255,16 @@ account_data_func(GtkTreeViewColumn *tree_column, GtkCellRenderer *cell,
       else
         fgcolor = g_strdup("");
 
-      markup = g_strdup_printf("%s\n<span %s size=\"x-small\">%s</span>",
-                               display_name, fgcolor, status_message);
+      s = g_strdup_printf("%s\n<span %s size=\"x-small\">%s</span>",
+                          markup, fgcolor, status_message);
       g_free(status_message);
       g_free(fgcolor);
+      markup = s;
     }
 
     g_object_set(cell, "markup", markup, NULL);
     g_object_unref(account);
-    g_free(markup);
+    g_free(s);
   }
   else
     g_object_set(cell, "text", _("pres_fi_accounts"), NULL);

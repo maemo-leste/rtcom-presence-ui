@@ -301,7 +301,7 @@ compute_global_presence_idle(gpointer user_data)
 
       if (account)
       {
-        gboolean not_connected = TRUE;
+        gboolean status_changed = TRUE;
         gboolean can_change_presence;
 
         can_change_presence = account_can_change_presence(master, account);
@@ -314,7 +314,7 @@ compute_global_presence_idle(gpointer user_data)
             play_account_disconnected(master);
 
           if (account_old_connection_status == TP_CONNECTION_STATUS_CONNECTING)
-            not_connected = FALSE;
+            status_changed = FALSE;
 
           if (can_change_presence)
           {
@@ -420,10 +420,10 @@ compute_global_presence_idle(gpointer user_data)
           gboolean not_sip;
           gboolean msg_diff = FALSE;
 
-          if (account_old_connection_status)
+          if (account_old_connection_status != TP_CONNECTION_STATUS_CONNECTED)
             play_account_connected(master);
           else
-            not_connected = FALSE;
+            status_changed = FALSE;
 
           if (!can_change_presence)
             type = TP_CONNECTION_PRESENCE_TYPE_AVAILABLE;
@@ -497,9 +497,10 @@ compute_global_presence_idle(gpointer user_data)
         presence_icon_name = g_strdup(get_presence_icon(type));
         presence_icon = pui_master_get_icon(master, presence_icon_name,
                                             ICON_SIZE_MID);
+
         g_free(presence_icon_name);
 
-        if (not_connected)
+        if (status_changed)
         {
           gtk_list_store_set(
             priv->list_store,
@@ -827,6 +828,23 @@ static void
 presence_changed_cb(TpAccount *account, guint presence, gchar *status,
                     gchar *status_message, PuiMaster *master)
 {
+  PuiMasterPrivate *priv = PRIVATE(master);
+  GtkTreeIter iter;
+
+  if (account_get(master, account, &iter))
+  {
+    gtk_list_store_set(priv->list_store, &iter,
+                       COLUMN_IS_CHANGING_STATUS, TRUE,
+                       -1);
+  }
+
+  compute_global_presence_delayed(master);
+}
+
+static void
+on_requested_presence_changed_cb(TpAccount *account, GParamSpec *pspec,
+                                 PuiMaster *master)
+{
   GtkTreeIter iter;
 
   if (tp_account_get_connection_status(account, NULL) ==
@@ -899,9 +917,7 @@ on_property_changed(TpAccount *account, GParamSpec *pspec,
       account_add_to_store(master, account, TRUE);
   }
   else if (found)
-  {
     account_remove(master, &it);
-  }
 }
 
 static void
@@ -912,11 +928,13 @@ account_append(PuiMaster *master, TpAccount *account, gboolean set_presence)
 
   g_signal_connect(account, "presence-changed",
                    G_CALLBACK(presence_changed_cb), master);
+  g_signal_connect(account, "notify::valid",
+                   G_CALLBACK(on_requested_presence_changed_cb), master);
   g_signal_connect(account, "status-changed",
                    G_CALLBACK(status_changed_cb), master);
   g_signal_connect(account, "avatar-changed",
                    G_CALLBACK(avatar_changed_cb), master);
-  g_signal_connect(account, "notify::enabled",
+  g_signal_connect(account, "notify::valid",
                    G_CALLBACK(on_property_changed), master);
   g_signal_connect(account, "notify::enabled",
                    G_CALLBACK(on_property_changed), master);
