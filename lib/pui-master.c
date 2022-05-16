@@ -425,10 +425,10 @@ compute_global_presence_idle(gpointer user_data)
           else
             status_changed = FALSE;
 
+          type = tp_account_get_current_presence(account, NULL, &message);
+
           if (!can_change_presence)
             type = TP_CONNECTION_PRESENCE_TYPE_AVAILABLE;
-          else
-            type = tp_account_get_current_presence(account, NULL, &message);
 
           not_sip = tp_account_is_not_sip(account);
 
