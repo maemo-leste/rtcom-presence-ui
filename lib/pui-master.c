@@ -265,7 +265,6 @@ compute_global_presence_idle(gpointer user_data)
   TpConnectionStatus account_connection_status;
   const gchar *account_old_presence;
   TpConnectionStatusReason account_status_reason;
-  gchar *status_message = NULL;
   GtkTreeIter iter;
   TpConnectionStatus account_old_connection_status;
   TpAccount *account;
@@ -303,6 +302,7 @@ compute_global_presence_idle(gpointer user_data)
       {
         gboolean status_changed = TRUE;
         gboolean can_change_presence;
+        gchar *status_message = NULL;
 
         can_change_presence = account_can_change_presence(master, account);
         account_connection_status =
@@ -1830,7 +1830,7 @@ pui_master_save_profile(PuiMaster *master, PuiProfile *profile)
 
   if (!g_list_find(priv->profiles, profile))
   {
-    priv->profiles = g_list_append(NULL, profile);
+    priv->profiles = g_list_append(priv->profiles, profile);
     g_signal_emit(master, signals[PROFILE_CREATED], 0, profile);
   }
   else

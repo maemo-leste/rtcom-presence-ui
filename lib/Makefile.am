@@ -17,6 +17,7 @@ librtcom_presence_ui_la_SOURCES =					\
 		pui-profile.c						\
 		pui-master.c						\
 		pui-main-view.c						\
+		pui-profile-editor.c					\
 		pui-list-picker.c
 
 dbus-glib-marshal-presence-ui.h: $(top_srcdir)/xml/presence-ui.xml

@@ -23,6 +23,7 @@
 #include <rtcom-accounts-ui-client/client.h>
 
 #include "pui-account-view.h"
+#include "pui-profile-editor.h"
 
 #include "pui-main-view.h"
 
@@ -40,7 +41,7 @@ struct _PuiMainViewPrivate
   PuiLocationLevel location_level;
   GtkWidget *table;
   GtkWidget *first_button;
-  int profile_buttons_count;
+  gint profile_buttons_count;
   gboolean connecting : 1;
   GtkWidget *new_status_button;
   GtkWidget *edit_status_button;
@@ -299,10 +300,104 @@ on_profile_changed(PuiMaster *master, PuiProfile *profile, PuiMainView *view)
   update_buttons_visibility(view);
 }
 
+static gint
+sort_profile_buttons(gconstpointer a, gconstpointer b)
+{
+  const GtkTableChild *ca = a;
+  const GtkTableChild *cb = b;
+
+  if (ca->top_attach == cb->top_attach)
+    return ca->left_attach - cb->left_attach;
+  else
+    return ca->top_attach - cb->top_attach;
+}
+
+static void
+remove_profile_button(PuiMainView *view, GtkWidget *button,
+                      gint top_attach, gint left_attach)
+{
+  PuiMainViewPrivate *priv = PRIVATE(view);
+  GList *l;
+  GList *sorted;
+
+  gtk_container_remove(GTK_CONTAINER(priv->table), button);
+  sorted = g_list_sort(g_list_copy(GTK_TABLE(priv->table)->children),
+                       sort_profile_buttons);
+  priv->profile_buttons_count--;
+
+  for (l = sorted; l; l = l->next)
+  {
+    GtkTableChild *child = l->data;
+
+    if ((child->top_attach >= top_attach) && (child->left_attach > left_attach))
+      break;
+  }
+
+  for (; l; l = l->next)
+  {
+    GtkTableChild *child = l->data;
+    GtkWidget *widget = child->widget;
+
+    g_object_ref(widget);
+    gtk_container_remove(GTK_CONTAINER(priv->table), widget);
+    gtk_table_attach_defaults(GTK_TABLE(priv->table), widget,
+                              left_attach, left_attach + 1,
+                              top_attach, top_attach + 1);
+    g_object_unref(widget);
+
+    left_attach++;
+
+    if (left_attach > 2)
+    {
+      left_attach = 0;
+      top_attach++;
+    }
+  }
+
+  g_list_free(sorted);
+}
+
 static void
 on_profile_deleted(PuiMaster *master, PuiProfile *profile, PuiMainView *view)
 {
-  g_assert(0);
+  PuiMainViewPrivate *priv = PRIVATE(view);
+  GtkWidget *profile_button = find_profile_button(view, profile);
+  GList *l;
+
+  if (gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(profile_button)))
+  {
+    GtkWidget *button =
+      find_profile_button(view, pui_master_get_active_profile(master));
+
+    if (button)
+    {
+      set_active_profile(view, profile);
+      gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(button), TRUE);
+    }
+  }
+
+  for (l = GTK_TABLE(priv->table)->children; l; l = l->next)
+  {
+    GtkTableChild *child = l->data;
+
+    if (child->top_attach)
+    {
+      if (g_object_get_data(G_OBJECT(child->widget), "puiprofile") == profile)
+      {
+        remove_profile_button(view, child->widget,
+                              child->top_attach, child->left_attach);
+        update_new_status_button_visibility(priv);
+
+        if (!(priv->profile_buttons_count % 3))
+        {
+          gtk_table_resize(GTK_TABLE(priv->table),
+                           priv->profile_buttons_count / 3 + 1, 3);
+        }
+
+        break;
+      }
+    }
+  }
 }
 
 static void
@@ -755,28 +850,25 @@ pui_main_view_activate_profile(PuiMainView *view, PuiProfile *profile)
 static void
 on_new_status_button_clicked(GtkWidget *button, PuiMainView *view)
 {
-  /* FIXME */
-  /* pui_profile_editor_run_new(PRIVATE(view)->master); */
+  pui_profile_editor_run_new(PRIVATE(view)->master, GTK_WINDOW(view));
 }
 
 static void
 on_edit_status_button_clicked(GtkWidget *button, PuiMainView *view)
 {
-  /* FIXME */
-  /*
   PuiMainViewPrivate *priv = PRIVATE(view);
+  PuiProfile *active_profile = priv->active_profile;
 
-  if (!priv->active_profile->builtin)
+  if (!active_profile->builtin)
   {
     PuiProfile *profile;
 
-    pui_profile_editor_run_edit(priv->master);
+    pui_profile_editor_run_edit(priv->master, GTK_WINDOW(view), active_profile);
     profile = pui_master_get_active_profile(priv->master);
 
     if (profile == priv->active_profile)
       pui_main_view_activate_profile(view, profile);
   }
-  */
 }
 
 static void

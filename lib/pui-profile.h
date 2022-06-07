@@ -48,7 +48,7 @@ void
 pui_profile_free(PuiProfile *profile);
 
 void
-pui_profile_set_account_presence(PuiProfile *profile, const char *account_id,
+pui_profile_set_account_presence(PuiProfile *profile, TpAccount *account,
                                  gchar *presence);
 
 const gchar *

@@ -47,33 +47,34 @@ pui_profile_free(PuiProfile *profile)
 }
 
 void
-pui_profile_set_account_presence(PuiProfile *profile, const char *account_id,
+pui_profile_set_account_presence(PuiProfile *profile, TpAccount *account,
                                  gchar *presence)
 {
+  const gchar *id = tp_account_get_path_suffix(account);
   GSList *l;
-  PuiAccount *account;
+  PuiAccount *pa;
 
   for (l = profile->accounts; l; l = l->next)
   {
-    account = l->data;
+    pa = l->data;
 
-    if (!strcmp(account->account_id, account_id))
+    if (!strcmp(pa->account_id, id))
       break;
   }
 
   if (l)
   {
-    account = l->data;
-    g_free(account->presence);
+    pa = l->data;
+    g_free(pa->presence);
   }
   else
   {
-    account = g_slice_new(PuiAccount);
-    account->account_id = g_strdup(account_id);
-    profile->accounts = g_slist_prepend(profile->accounts, account);
+    pa = g_slice_new(PuiAccount);
+    pa->account_id = g_strdup(id);
+    profile->accounts = g_slist_prepend(profile->accounts, pa);
   }
 
-  account->presence = presence;
+  pa->presence = presence;
 }
 
 const gchar *
