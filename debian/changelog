@@ -1,3 +1,9 @@
+rtcom-presence-ui (0.0.3) unstable; urgency=low
+
+  * Listen for new connection managers being added
+
+ -- Ivaylo Dimitrov <ivo.g.dimitrov.75@gmail.com>  Sun, 25 May 2025 13:29:23 +0300
+
 rtcom-presence-ui (0.0.2) unstable; urgency=low
 
   * Implement status editor
