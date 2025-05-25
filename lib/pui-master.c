@@ -1226,6 +1226,12 @@ pui_master_dispose(GObject *object)
       g_object_unref(priv->location);
       priv->location = NULL;
     }
+
+    if (priv->mce_proxy)
+    {
+      g_object_unref(priv->mce_proxy);
+      priv->mce_proxy = NULL;
+    }
   }
 
   G_OBJECT_CLASS(pui_master_parent_class)->dispose(object);
