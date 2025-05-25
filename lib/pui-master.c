@@ -1115,6 +1115,18 @@ cms_list_idle(gpointer user_data)
 }
 
 static void
+pui_master_tp_init(PuiMaster *master)
+{
+  PuiMasterPrivate *priv = PRIVATE(master);
+
+  priv->cms_list_idle_tag = g_idle_add(cms_list_idle, master);
+  g_signal_connect(master, "presence-changed",
+                   G_CALLBACK(master_presence_changed_cb), master);
+  master_presence_changed_cb(master);
+  compute_presence_message(master);
+}
+
+static void
 on_name_owner_changed(DBusGProxy *proxy,
                       const char *name,
                       const char *old_owner,
@@ -1123,8 +1135,49 @@ on_name_owner_changed(DBusGProxy *proxy,
 {
   PuiMasterPrivate *priv = PRIVATE(user_data);
 
+  /* did we lose account manager */
+  if (!g_strcmp0(name, TP_ACCOUNT_MANAGER_BUS_NAME) && !*new_owner &&
+      priv->manager)
+  {
+    TpDBusDaemon *dbus = g_object_ref(tp_proxy_get_dbus_daemon(priv->manager));
+
+    g_warning("Account manager lost, will reconnect");
+
+    g_hash_table_remove_all(priv->disconnected_accounts);
+    g_hash_table_remove_all(priv->connection_managers);
+
+    priv->cms_ready = FALSE;
+
+    if (priv->cms_list_idle_tag)
+    {
+      g_source_remove(priv->cms_list_idle_tag);
+      priv->cms_list_idle_tag = 0;
+    }
+
+    if (priv->compute_global_presence_id)
+    {
+      g_source_remove(priv->compute_global_presence_id);
+      priv->compute_global_presence_id = 0;
+    }
+
+    if (priv->set_presence_id)
+    {
+      g_source_remove(priv->set_presence_id);
+      priv->set_presence_id = 0;
+    }
+
+    if (priv->list_store)
+      gtk_list_store_clear(priv->list_store);
+
+    g_object_unref(priv->manager);
+
+    priv->manager = tp_account_manager_new(dbus);
+
+    pui_master_tp_init(PUI_MASTER(user_data));
+    g_object_unref(dbus);
+  }
   /* if changed or is acquired */
-  if (g_str_has_prefix(name, TP_CM_BUS_NAME_BASE) &&
+  else if (g_str_has_prefix(name, TP_CM_BUS_NAME_BASE) &&
       (!*old_owner || (*old_owner && *new_owner)))
   {
     g_info("%s changed.", name);
@@ -1157,6 +1210,7 @@ fdo_dbus_connect(PuiMaster *self, DBusGConnection *dbus)
   dbus_g_proxy_connect_signal(priv->fdo_proxy, "NameOwnerChanged",
                               G_CALLBACK(on_name_owner_changed), self, NULL);
 }
+
 static GObject *
 pui_master_constructor(GType type, guint n_construct_properties,
                        GObjectConstructParam *construct_properties)
@@ -1178,11 +1232,7 @@ pui_master_constructor(GType type, guint n_construct_properties,
   dbus = tp_proxy_get_dbus_connection(priv->manager);
 
   fdo_dbus_connect(master, dbus);
-  priv->cms_list_idle_tag = g_idle_add(cms_list_idle, master);
-  g_signal_connect(master, "presence-changed",
-                   G_CALLBACK(master_presence_changed_cb), master);
-  master_presence_changed_cb(master);
-  compute_presence_message(master);
+  pui_master_tp_init(master);
 
   priv->ca_ctx = NULL;
   res = ca_context_create(&c);
@@ -1258,8 +1308,17 @@ pui_master_dispose(GObject *object)
     g_hash_table_destroy(priv->icons_default);
     g_hash_table_destroy(priv->icons_mid);
     g_hash_table_destroy(priv->icons_small);
+
     g_hash_table_destroy(priv->disconnected_accounts);
     g_hash_table_destroy(priv->connection_managers);
+
+    priv->cms_ready = FALSE;
+
+    if (priv->cms_list_idle_tag)
+    {
+      g_source_remove(priv->cms_list_idle_tag);
+      priv->cms_list_idle_tag = 0;
+    }
 
     if (priv->compute_global_presence_id)
     {
