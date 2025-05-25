@@ -64,9 +64,12 @@ struct _PuiMasterPrivate
   guint set_presence_id;
   gboolean disposed;
   DBusGProxy *mce_proxy;
+  DBusGProxy *fdo_proxy;
   gboolean display_on;
   gboolean has_disconnected_account;
   GHashTable *connection_managers;
+  guint cms_list_idle_tag;
+  gboolean cms_ready;
   time_t last_info_time;
 };
 
@@ -1020,16 +1023,20 @@ cms_ready_cb(GObject *object, GAsyncResult *res, gpointer user_data)
 
   g_list_free(cms);
 
-  g_signal_connect(priv->manager, "account-validity-changed",
-                   G_CALLBACK(on_account_validity_changed_cb), master);
-  g_signal_connect(priv->manager, "account-removed",
-                   G_CALLBACK(on_account_disabled_cb), master);
-  g_signal_connect(priv->manager, "account-enabled",
-                   G_CALLBACK(on_account_enabled_cb), master);
-  g_signal_connect(priv->manager, "account-disabled",
-                   G_CALLBACK(on_account_disabled_cb), master);
+  if (!priv->cms_ready)
+  {
+    g_signal_connect(priv->manager, "account-validity-changed",
+                     G_CALLBACK(on_account_validity_changed_cb), master);
+    g_signal_connect(priv->manager, "account-removed",
+                     G_CALLBACK(on_account_disabled_cb), master);
+    g_signal_connect(priv->manager, "account-enabled",
+                     G_CALLBACK(on_account_enabled_cb), master);
+    g_signal_connect(priv->manager, "account-disabled",
+                     G_CALLBACK(on_account_disabled_cb), master);
 
-  tp_proxy_prepare_async(priv->manager, NULL, on_manager_ready, master);
+    tp_proxy_prepare_async(priv->manager, NULL, on_manager_ready, master);
+    priv->cms_ready = TRUE;
+  }
 }
 
 static void
@@ -1094,11 +1101,68 @@ compute_presence_message(PuiMaster *master)
     g_free(status_message);
 }
 
+static gboolean
+cms_list_idle(gpointer user_data)
+{
+  PuiMasterPrivate *priv = PRIVATE(user_data);
+
+  priv->cms_list_idle_tag = 0;
+
+  tp_list_connection_managers_async(tp_proxy_get_dbus_daemon(priv->manager),
+                                    cms_ready_cb, user_data);
+
+  return G_SOURCE_REMOVE;
+}
+
+static void
+on_name_owner_changed(DBusGProxy *proxy,
+                      const char *name,
+                      const char *old_owner,
+                      const char *new_owner,
+                      gpointer user_data)
+{
+  PuiMasterPrivate *priv = PRIVATE(user_data);
+
+  /* if changed or is acquired */
+  if (g_str_has_prefix(name, TP_CM_BUS_NAME_BASE) &&
+      (!*old_owner || (*old_owner && *new_owner)))
+  {
+    g_info("%s changed.", name);
+
+    if (priv->cms_list_idle_tag)
+      g_source_remove(priv->cms_list_idle_tag);
+
+    priv->cms_list_idle_tag = g_idle_add(cms_list_idle, user_data);
+  }
+}
+
+static void
+fdo_dbus_connect(PuiMaster *self, DBusGConnection *dbus)
+{
+  PuiMasterPrivate *priv = PRIVATE(self);
+
+  priv->fdo_proxy = dbus_g_proxy_new_for_name(dbus,
+                                              DBUS_SERVICE_DBUS,
+                                              DBUS_PATH_DBUS,
+                                              DBUS_INTERFACE_DBUS);
+
+  g_return_if_fail(priv->fdo_proxy != NULL);
+
+  dbus_g_proxy_add_signal(priv->fdo_proxy,
+                          "NameOwnerChanged",
+                          G_TYPE_STRING,
+                          G_TYPE_STRING,
+                          G_TYPE_STRING,
+                          G_TYPE_INVALID);
+  dbus_g_proxy_connect_signal(priv->fdo_proxy, "NameOwnerChanged",
+                              G_CALLBACK(on_name_owner_changed), self, NULL);
+}
 static GObject *
 pui_master_constructor(GType type, guint n_construct_properties,
                        GObjectConstructParam *construct_properties)
 {
   ca_context *c = NULL;
+  DBusGConnection *dbus;
   GObject *object;
   PuiMaster *master;
   PuiMasterPrivate *priv;
@@ -1111,10 +1175,10 @@ pui_master_constructor(GType type, guint n_construct_properties,
 
   master = PUI_MASTER(object);
   priv = PRIVATE(master);
+  dbus = tp_proxy_get_dbus_connection(priv->manager);
 
-  tp_list_connection_managers_async(tp_proxy_get_dbus_daemon(priv->manager),
-                                    cms_ready_cb, master);
-
+  fdo_dbus_connect(master, dbus);
+  priv->cms_list_idle_tag = g_idle_add(cms_list_idle, master);
   g_signal_connect(master, "presence-changed",
                    G_CALLBACK(master_presence_changed_cb), master);
   master_presence_changed_cb(master);
@@ -1133,7 +1197,7 @@ pui_master_constructor(GType type, guint n_construct_properties,
   else
     priv->ca_ctx = c;
 
-  register_dbus(master, tp_proxy_get_dbus_connection(priv->manager));
+  register_dbus(master, dbus);
 
   return object;
 }
@@ -1231,6 +1295,12 @@ pui_master_dispose(GObject *object)
     {
       g_object_unref(priv->mce_proxy);
       priv->mce_proxy = NULL;
+    }
+
+    if (priv->fdo_proxy)
+    {
+      g_object_unref(priv->fdo_proxy);
+      priv->fdo_proxy = NULL;
     }
   }
 
@@ -1597,6 +1667,7 @@ pui_master_init(PuiMaster *master)
                           (GEqualFunc)g_str_equal,
                           (GDestroyNotify)g_free,
                           (GDestroyNotify)g_object_unref);
+  priv->cms_ready = FALSE;
 }
 
 PuiMaster *
@@ -2133,6 +2204,7 @@ pui_master_set_presence_idle(gpointer user_data)
     compute_global_presence_delayed(master);
 
   priv->set_presence_id = 0;
+
   return FALSE;
 }
 
