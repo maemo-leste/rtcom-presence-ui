@@ -372,6 +372,8 @@ pui_menu_item_constructed(GObject *object)
     {
       TpDBusDaemon *dbus_daemon = tp_dbus_daemon_new(connection);
 
+      tp_debug_set_flags(g_getenv("PUI_TP_DEBUG"));
+
       priv->master = pui_master_new(dbus_daemon);
       g_object_unref(dbus_daemon);
       dbus_g_connection_unref(connection);
