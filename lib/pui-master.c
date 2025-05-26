@@ -38,6 +38,7 @@
 struct _PuiMasterPrivate
 {
   TpAccountManager *manager;
+  gboolean accounts_added;
   GtkWidget *parent;
   gchar *config_filename;
   GKeyFile *config;
@@ -69,7 +70,6 @@ struct _PuiMasterPrivate
   gboolean has_disconnected_account;
   GHashTable *connection_managers;
   guint cms_list_idle_tag;
-  gboolean cms_ready;
   time_t last_info_time;
 };
 
@@ -132,6 +132,13 @@ static PuiProfile default_profiles[] =
     "offline"
   }
 };
+
+static TpAccountManager *
+create_account_manager(PuiMaster *self, TpDBusDaemon *dbus);
+
+static void
+on_account_manager_invalidate_cb (TpProxy *self, guint domain, gint code,
+                                  gchar *message, gpointer user_data);
 
 static gboolean
 tp_account_is_not_sip(TpAccount *account)
@@ -929,6 +936,8 @@ account_append(PuiMaster *master, TpAccount *account, gboolean set_presence)
   if (!strcmp(tp_account_get_protocol_name(account), "tel"))
     return;
 
+  g_debug("adding account %s", tp_account_get_path_suffix(account));
+
   g_signal_connect(account, "presence-changed",
                    G_CALLBACK(presence_changed_cb), master);
   g_signal_connect(account, "notify::valid",
@@ -961,6 +970,7 @@ on_account_enabled_cb(TpAccountManager *am, TpAccount *account,
     account_append(master, account, TRUE);
     compute_global_presence_delayed(master);
   }
+
 }
 
 static void
@@ -974,31 +984,7 @@ on_account_validity_changed_cb(TpAccountManager *am, TpAccount *account,
 }
 
 static void
-on_manager_ready(GObject *object, GAsyncResult *res, gpointer user_data)
-{
-  TpAccountManager *manager = (TpAccountManager *)object;
-  PuiMaster *master = user_data;
-  GError *error = NULL;
-
-  if (!tp_proxy_prepare_finish(object, res, &error))
-  {
-    g_warning("Error preparing AM: %s\n", error->message);
-    g_error_free(error);
-  }
-  else
-  {
-    GList *accounts = tp_account_manager_dup_valid_accounts(manager);
-    GList *l;
-
-    for (l = accounts; l; l = l->next)
-      account_append(master, l->data, FALSE);
-
-    g_list_free_full(accounts, g_object_unref);
-  }
-}
-
-static void
-cms_ready_cb(GObject *object, GAsyncResult *res, gpointer user_data)
+on_list_cms_ready_cb(GObject *object, GAsyncResult *res, gpointer user_data)
 {
   PuiMaster *master = PUI_MASTER(user_data);
   PuiMasterPrivate *priv = PRIVATE(master);
@@ -1016,26 +1002,60 @@ cms_ready_cb(GObject *object, GAsyncResult *res, gpointer user_data)
 
   for (l = cms; l; l = l->next)
   {
-    g_hash_table_insert(priv->connection_managers,
-                        g_strdup(tp_connection_manager_get_name(l->data)),
-                        l->data);
+    const char *cm_name = tp_connection_manager_get_name(l->data);
+
+    g_debug("Adding cm %s", cm_name);
+    g_hash_table_insert(priv->connection_managers, g_strdup(cm_name), l->data);
   }
 
   g_list_free(cms);
 
-  if (!priv->cms_ready)
+  if (!priv->accounts_added)
   {
-    g_signal_connect(priv->manager, "account-validity-changed",
-                     G_CALLBACK(on_account_validity_changed_cb), master);
-    g_signal_connect(priv->manager, "account-removed",
-                     G_CALLBACK(on_account_disabled_cb), master);
-    g_signal_connect(priv->manager, "account-enabled",
-                     G_CALLBACK(on_account_enabled_cb), master);
-    g_signal_connect(priv->manager, "account-disabled",
-                     G_CALLBACK(on_account_disabled_cb), master);
+    GList *accounts = tp_account_manager_dup_valid_accounts(priv->manager);
+    GList *l;
 
-    tp_proxy_prepare_async(priv->manager, NULL, on_manager_ready, master);
-    priv->cms_ready = TRUE;
+    for (l = accounts; l; l = l->next)
+      account_append(master, l->data, FALSE);
+
+    g_list_free_full(accounts, g_object_unref);
+
+    priv->accounts_added = TRUE;
+  }
+}
+
+static gboolean
+cms_list_idle(gpointer user_data)
+{
+  PuiMasterPrivate *priv = PRIVATE(user_data);
+
+  priv->cms_list_idle_tag = 0;
+
+  g_debug("Getting connecton managers...");
+
+  tp_list_connection_managers_async(tp_proxy_get_dbus_daemon(priv->manager),
+                                    on_list_cms_ready_cb, user_data);
+
+  return G_SOURCE_REMOVE;
+}
+
+static void
+on_manager_ready(GObject *object, GAsyncResult *res, gpointer user_data)
+{
+  PuiMaster *master = user_data;
+  PuiMasterPrivate *priv = PRIVATE(master);
+  GError *error = NULL;
+
+  if (!tp_proxy_prepare_finish(object, res, &error))
+  {
+    g_warning("Error preparing AM: %s\n", error->message);
+    g_error_free(error);
+  }
+  else
+  {
+    g_debug("Account manager ready");
+
+    priv->cms_list_idle_tag = g_idle_add(cms_list_idle, master);
   }
 }
 
@@ -1101,29 +1121,99 @@ compute_presence_message(PuiMaster *master)
     g_free(status_message);
 }
 
-static gboolean
-cms_list_idle(gpointer user_data)
-{
-  PuiMasterPrivate *priv = PRIVATE(user_data);
-
-  priv->cms_list_idle_tag = 0;
-
-  tp_list_connection_managers_async(tp_proxy_get_dbus_daemon(priv->manager),
-                                    cms_ready_cb, user_data);
-
-  return G_SOURCE_REMOVE;
-}
-
 static void
 pui_master_tp_init(PuiMaster *master)
 {
   PuiMasterPrivate *priv = PRIVATE(master);
 
-  priv->cms_list_idle_tag = g_idle_add(cms_list_idle, master);
-  g_signal_connect(master, "presence-changed",
-                   G_CALLBACK(master_presence_changed_cb), master);
+  g_signal_connect(priv->manager, "account-validity-changed",
+                   G_CALLBACK(on_account_validity_changed_cb), master);
+  g_signal_connect(priv->manager, "account-removed",
+                   G_CALLBACK(on_account_disabled_cb), master);
+  g_signal_connect(priv->manager, "account-enabled",
+                   G_CALLBACK(on_account_enabled_cb), master);
+  g_signal_connect(priv->manager, "account-disabled",
+                   G_CALLBACK(on_account_disabled_cb), master);
+
+  g_debug("Waiting for account manager to become ready.");
+
+  tp_proxy_prepare_async(priv->manager, NULL, on_manager_ready, master);
+
   master_presence_changed_cb(master);
   compute_presence_message(master);
+}
+
+static void
+pui_master_clear(PuiMaster *master)
+{
+  PuiMasterPrivate *priv = PRIVATE(master);
+
+  g_hash_table_remove_all(priv->disconnected_accounts);
+  g_hash_table_remove_all(priv->connection_managers);
+
+  priv->accounts_added = FALSE;
+
+  if (priv->cms_list_idle_tag)
+  {
+    g_source_remove(priv->cms_list_idle_tag);
+    priv->cms_list_idle_tag = 0;
+  }
+
+  if (priv->compute_global_presence_id)
+  {
+    g_source_remove(priv->compute_global_presence_id);
+    priv->compute_global_presence_id = 0;
+  }
+
+  if (priv->set_presence_id)
+  {
+    g_source_remove(priv->set_presence_id);
+    priv->set_presence_id = 0;
+  }
+
+  if (priv->list_store)
+    gtk_list_store_clear(priv->list_store);
+
+  if (priv->manager)
+  {
+    g_signal_handlers_disconnect_by_func(
+          priv->manager, on_account_manager_invalidate_cb, master);
+    g_object_unref(priv->manager);
+    priv->manager = NULL;
+  }
+}
+
+static void
+pui_master_account_manager_restart(PuiMaster *master)
+{
+  PuiMasterPrivate *priv = PRIVATE(master);
+  TpDBusDaemon *dbus = g_object_ref(tp_proxy_get_dbus_daemon(priv->manager));
+
+  pui_master_clear(master);
+  priv->manager = create_account_manager(master, dbus);
+
+  pui_master_tp_init(master);
+  g_object_unref(dbus);
+}
+
+static void
+on_account_manager_invalidate_cb (TpProxy *self, guint domain, gint code,
+                                  gchar *message, gpointer user_data)
+{
+  g_warning("Account manager invalid: %s", message);
+
+  pui_master_account_manager_restart(PUI_MASTER(user_data));
+}
+
+static TpAccountManager *
+create_account_manager(PuiMaster *self, TpDBusDaemon *dbus)
+{
+  TpAccountManager *manager = tp_account_manager_new(dbus);
+
+  g_signal_connect(manager, "invalidated",
+                   G_CALLBACK(on_account_manager_invalidate_cb), self);
+
+  return manager;
 }
 
 static void
@@ -1139,46 +1229,13 @@ on_name_owner_changed(DBusGProxy *proxy,
   if (!g_strcmp0(name, TP_ACCOUNT_MANAGER_BUS_NAME) && !*new_owner &&
       priv->manager)
   {
-    TpDBusDaemon *dbus = g_object_ref(tp_proxy_get_dbus_daemon(priv->manager));
-
-    g_warning("Account manager lost, will reconnect");
-
-    g_hash_table_remove_all(priv->disconnected_accounts);
-    g_hash_table_remove_all(priv->connection_managers);
-
-    priv->cms_ready = FALSE;
-
-    if (priv->cms_list_idle_tag)
-    {
-      g_source_remove(priv->cms_list_idle_tag);
-      priv->cms_list_idle_tag = 0;
-    }
-
-    if (priv->compute_global_presence_id)
-    {
-      g_source_remove(priv->compute_global_presence_id);
-      priv->compute_global_presence_id = 0;
-    }
-
-    if (priv->set_presence_id)
-    {
-      g_source_remove(priv->set_presence_id);
-      priv->set_presence_id = 0;
-    }
-
-    if (priv->list_store)
-      gtk_list_store_clear(priv->list_store);
-
-    g_object_unref(priv->manager);
-
-    priv->manager = tp_account_manager_new(dbus);
-
-    pui_master_tp_init(PUI_MASTER(user_data));
-    g_object_unref(dbus);
+    g_warning("Account manager disappeared.");
+    pui_master_account_manager_restart(PUI_MASTER(user_data));
   }
   /* if changed or is acquired */
   else if (g_str_has_prefix(name, TP_CM_BUS_NAME_BASE) &&
-      (!*old_owner || (*old_owner && *new_owner)))
+           (!*old_owner || (*old_owner && *new_owner)) &&
+           priv->accounts_added)
   {
     g_info("%s changed.", name);
 
@@ -1230,6 +1287,10 @@ pui_master_constructor(GType type, guint n_construct_properties,
   master = PUI_MASTER(object);
   priv = PRIVATE(master);
   dbus = tp_proxy_get_dbus_connection(priv->manager);
+  priv->accounts_added = FALSE;
+
+  g_signal_connect(master, "presence-changed",
+                   G_CALLBACK(master_presence_changed_cb), master);
 
   fdo_dbus_connect(master, dbus);
   pui_master_tp_init(master);
@@ -1277,6 +1338,7 @@ static void
 pui_master_set_property(GObject *object, guint property_id, const GValue *value,
                         GParamSpec *pspec)
 {
+  PuiMaster *master = PUI_MASTER(object);
   switch (property_id)
   {
     case PROP_DBUS_DAEMON:
@@ -1285,7 +1347,7 @@ pui_master_set_property(GObject *object, guint property_id, const GValue *value,
 
       g_assert(priv->manager == NULL);
 
-      priv->manager = tp_account_manager_new(g_value_get_object(value));
+      priv->manager = create_account_manager(master, g_value_get_object(value));
       break;
     }
     default:
@@ -1309,40 +1371,7 @@ pui_master_dispose(GObject *object)
     g_hash_table_destroy(priv->icons_mid);
     g_hash_table_destroy(priv->icons_small);
 
-    g_hash_table_destroy(priv->disconnected_accounts);
-    g_hash_table_destroy(priv->connection_managers);
-
-    priv->cms_ready = FALSE;
-
-    if (priv->cms_list_idle_tag)
-    {
-      g_source_remove(priv->cms_list_idle_tag);
-      priv->cms_list_idle_tag = 0;
-    }
-
-    if (priv->compute_global_presence_id)
-    {
-      g_source_remove(priv->compute_global_presence_id);
-      priv->compute_global_presence_id = 0;
-    }
-
-    if (priv->set_presence_id)
-    {
-      g_source_remove(priv->set_presence_id);
-      priv->set_presence_id = 0;
-    }
-
-    if (priv->list_store)
-    {
-      g_object_unref(priv->list_store);
-      priv->list_store = NULL;
-    }
-
-    if (priv->manager)
-    {
-      g_object_unref(priv->manager);
-      priv->manager = NULL;
-    }
+    pui_master_clear(PUI_MASTER(object));
 
     if (priv->location)
     {
@@ -1726,7 +1755,6 @@ pui_master_init(PuiMaster *master)
                           (GEqualFunc)g_str_equal,
                           (GDestroyNotify)g_free,
                           (GDestroyNotify)g_object_unref);
-  priv->cms_ready = FALSE;
 }
 
 PuiMaster *
